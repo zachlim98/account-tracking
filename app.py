@@ -1,3 +1,4 @@
+from sqlite3.dbapi2 import Date
 import dash
 from dash_bootstrap_components._components.Button import Button
 from dash_bootstrap_components._components.Jumbotron import Jumbotron
@@ -13,7 +14,7 @@ import uuid
 import datetime as dt
 import julian
 import numpy as np
-from functions import enter, create_new_entry, close, update_trade, stats_table
+from functions import enter, create_new_entry, close, update_trade, stats_table, dd_list, balance_g
 from layout import update_layout, new_trade_layout
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
@@ -25,29 +26,7 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 # connect to database
 con = sl.connect("mydata.db", check_same_thread=False)
 
-# get list of active trades to present in dropdown
-data = con.execute("""
-    SELECT * FROM TRADE_MAIN GROUP BY trade_group_id
-""")
-menu_items = []
-for i in data:
-    menu_items.append({'label':i[3], 'value':i[1]})
-
-# prepare graph of account balance
-balance_sql  = """
-
-SELECT julianday(exit_date), pnl FROM TRADE_SUMMARY ORDER BY exit_date
-
-"""
-
-data = con.execute(balance_sql)
-
-dates = []
-pnl = []
-
-for i in data:
-    dates.append(julian.from_jd(i[0], fmt='jd').date())
-    pnl.append(i[1])
+dates, pnl = balance_g(con)
 
 #####################
 ## DASH APP LAYOUT ##
@@ -55,7 +34,7 @@ for i in data:
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
-update_form = update_layout(menu_items)
+update_form = update_layout(dd_list(con))
 new_form = new_trade_layout()
 
 app.layout = dbc.Container([
@@ -101,7 +80,8 @@ def render_content(tab):
     if tab == "tab-active":
         return html.Div([dbc.Table.from_dataframe(stats_table(con), striped=True, bordered=True, hover=True)])
     elif tab == "tab-history":
-        return html.Div([dcc.Graph(figure=px.line(x=dates, y=np.cumsum(pnl)))])
+        return html.Div([dcc.Graph(figure=px.line(x=dates, y=np.cumsum(pnl), 
+                        labels={"x" : "Date", "y" : "PnL"}, template="plotly_dark"))])
 
 # changing trade entry tabs
 @app.callback(
@@ -149,7 +129,6 @@ strike4, strike4_type, strike4_date, nc, tp, strat)
     enter(con, entry)
 
     return f"Successfully added: {ticker_label}"
-
 
 # update trades
 @app.callback(
